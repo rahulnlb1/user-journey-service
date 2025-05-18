@@ -6,6 +6,7 @@ class JourneyAPI {
     this.journeyService = journeyService;
   }
 
+  // Get all journeys
   getAllJourneys() {
     return Array.from(this.journeyService.journeys.values()).map((journey) => ({
       id: journey.id,
@@ -14,9 +15,11 @@ class JourneyAPI {
       isTimeBound: journey.isTimeBound,
       startDate: journey.startDate,
       endDate: journey.endDate,
+      isRecurring: journey.isRecurring,
     }));
   }
 
+  // Get a specific journey
   getJourney(journeyId) {
     try {
       return this.journeyService.getJourney(journeyId);
@@ -25,6 +28,7 @@ class JourneyAPI {
     }
   }
 
+  // Create a new journey
   createJourney(journeyData) {
     try {
       const journey = new Journey(
@@ -35,6 +39,10 @@ class JourneyAPI {
         journeyData.endDate
       );
 
+      if (journeyData.isRecurring) {
+        journey.setRecurring(true);
+      }
+
       // Add stages and connections
       journeyData.stages.forEach((stageData) => {
         const stage = new Stage(
@@ -42,7 +50,8 @@ class JourneyAPI {
           stageData.name,
           eval(stageData.conditionFn), // Note: In a real system, this would be handled more securely
           stageData.isOnboarding,
-          stageData.isTerminal
+          stageData.isTerminal,
+          stageData.sendSmsOnTransition
         );
 
         journey.addStage(stage);
@@ -61,6 +70,7 @@ class JourneyAPI {
     }
   }
 
+  // Update journey state
   updateJourneyState(journeyId, active) {
     try {
       return this.journeyService.updateState(journeyId, active);
@@ -69,6 +79,7 @@ class JourneyAPI {
     }
   }
 
+  // Get user's current stage in a journey
   getUserCurrentStage(userId, journeyId) {
     try {
       const stage = this.journeyService.getCurrentStage(userId, journeyId);
@@ -83,6 +94,7 @@ class JourneyAPI {
     }
   }
 
+  // Check if user is onboarded to a journey
   isUserOnboarded(userId, journeyId) {
     try {
       return {
@@ -95,6 +107,7 @@ class JourneyAPI {
     }
   }
 
+  // Get all journeys for a user
   getUserJourneys(userId) {
     try {
       return this.journeyService.getUserJourneys(userId);
@@ -106,6 +119,7 @@ class JourneyAPI {
     }
   }
 
+  // Manually evaluate a user event
   evaluateUserEvent(userId, payload) {
     try {
       return this.journeyService.evaluate(userId, payload);

@@ -2,13 +2,19 @@ class Journey {
   constructor(id, name, isTimeBound = false, startDate = null, endDate = null) {
     this.id = id;
     this.name = name;
-    this.stages = new Map();
+    this.stages = new Map(); // Map of stage ID to Stage object
     this.isTimeBound = isTimeBound;
     this.startDate = startDate;
     this.endDate = endDate;
     this.isActive = false;
     this.onboardingStageId = null;
     this.terminalStageId = null;
+    this.isRecurring = false; // For optional requirement 2
+  }
+
+  setRecurring(isRecurring) {
+    this.isRecurring = isRecurring;
+    return this;
   }
 
   addStage(stage) {
@@ -37,6 +43,7 @@ class Journey {
     return this;
   }
 
+  // Connect two stages in the journey
   connectStages(sourceStageId, targetStageId) {
     if (!this.stages.has(sourceStageId) || !this.stages.has(targetStageId)) {
       throw new Error("Source or target stage does not exist");
@@ -46,6 +53,7 @@ class Journey {
     return sourceStage.addNextStage(targetStageId);
   }
 
+  // Validate that the journey has a valid DAG structure with onboarding and terminal stages
   validate() {
     if (this.onboardingStageId === null) {
       throw new Error("Journey must have an onboarding stage");
@@ -55,6 +63,7 @@ class Journey {
       throw new Error("Journey must have a terminal stage");
     }
 
+    // Check if there's a path from onboarding to terminal stage
     const visited = new Set();
     const toVisit = [this.onboardingStageId];
 

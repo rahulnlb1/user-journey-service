@@ -1,12 +1,15 @@
 const { ErrorCodes } = require("../utils/errorCodes");
 const { UserJourneyState } = require("../models/userjourneyState");
+const { SmsService } = require("./SmsService");
 
 class UserJourneyService {
   constructor() {
-    this.journeys = new Map();
-    this.userJourneyStates = new Map();
+    this.journeys = new Map(); // Map of journey ID to Journey object
+    this.userJourneyStates = new Map(); // Map of userId-journeyId to UserJourneyState
+    this.smsService = new SmsService();
   }
 
+  // Create a new journey
   createJourney(journey) {
     if (this.journeys.has(journey.id)) {
       throw {
@@ -28,6 +31,7 @@ class UserJourneyService {
     return journey;
   }
 
+  // Update journey active state
   updateState(journeyId, active) {
     const journey = this.journeys.get(journeyId);
     if (!journey) {
@@ -54,6 +58,7 @@ class UserJourneyService {
     return true;
   }
 
+  // Get journey details
   getJourney(journeyId) {
     const journey = this.journeys.get(journeyId);
     if (!journey) {
@@ -65,15 +70,18 @@ class UserJourneyService {
     return journey;
   }
 
+  // Get the user-journey state key
   getUserJourneyStateKey(userId, journeyId) {
     return `${userId}-${journeyId}`;
   }
 
+  // Check if user is onboarded to a journey
   isOnboarded(userId, journeyId) {
     const stateKey = this.getUserJourneyStateKey(userId, journeyId);
     return this.userJourneyStates.has(stateKey);
   }
 
+  // Get current stage of user in a journey
   getCurrentStage(userId, journeyId) {
     const stateKey = this.getUserJourneyStateKey(userId, journeyId);
     const userState = this.userJourneyStates.get(stateKey);
@@ -89,10 +97,12 @@ class UserJourneyService {
     return journey.getStage(userState.currentStageId);
   }
 
+  // Onboard user to a journey
   onboardUserToJourney(userId, journey, timestamp = new Date()) {
     const stateKey = this.getUserJourneyStateKey(userId, journey.id);
 
-    if (this.userJourneyStates.has(stateKey)) {
+    // Check if user is already onboarded to this journey
+    if (this.userJourneyStates.has(stateKey) && !journey.isRecurring) {
       throw {
         errorCode: ErrorCodes.USER_ALREADY_ONBOARDED,
         message: `User ${userId} is already onboarded to journey ${journey.id}`,
@@ -109,9 +119,18 @@ class UserJourneyService {
 
     this.userJourneyStates.set(stateKey, userState);
 
+    // Send SMS if configured for onboarding stage
+    if (onboardingStage.sendSmsOnTransition) {
+      this.smsService.sendSms(
+        userId,
+        `Welcome to journey ${journey.name}! You have entered the ${onboardingStage.name} stage.`
+      );
+    }
+
     return userState;
   }
 
+  // Move user to next stage in a journey
   moveUserToNextStage(userId, journey, nextStage, timestamp = new Date()) {
     const stateKey = this.getUserJourneyStateKey(userId, journey.id);
     const userState = this.userJourneyStates.get(stateKey);
@@ -125,6 +144,7 @@ class UserJourneyService {
 
     const currentStage = journey.getStage(userState.currentStageId);
 
+    // Check if the next stage is valid
     if (!currentStage.nextStages.includes(nextStage.id)) {
       throw {
         errorCode: ErrorCodes.INVALID_STAGE,
@@ -134,14 +154,25 @@ class UserJourneyService {
 
     userState.moveToStage(nextStage.id, timestamp);
 
+    // Send SMS if configured for this stage
+    if (nextStage.sendSmsOnTransition) {
+      this.smsService.sendSms(
+        userId,
+        `You have moved to the ${nextStage.name} stage in journey ${journey.name}!`
+      );
+    }
+
     return userState;
   }
 
+  // Evaluate a payload for user journey progression
   evaluate(userId, payload) {
     const timestamp = new Date();
     const results = [];
 
+    // Check all journeys for potential onboarding
     this.journeys.forEach((journey) => {
+      // Skip inactive journeys
       if (!journey.isValidAtTime(timestamp)) {
         return;
       }
@@ -150,7 +181,8 @@ class UserJourneyService {
       const stateKey = this.getUserJourneyStateKey(userId, journey.id);
       const userState = this.userJourneyStates.get(stateKey);
 
-      if (!userState) {
+      // Check for onboarding if user is not already onboarded or if it's a recurring journey
+      if (!userState || journey.isRecurring) {
         if (onboardingStage.evaluateCondition(payload)) {
           try {
             const newState = this.onboardUserToJourney(
@@ -164,7 +196,7 @@ class UserJourneyService {
               stageId: onboardingStage.id,
             });
           } catch (error) {
-            // Skip if already onboarded
+            // Skip if already onboarded to non-recurring journey
             if (error.errorCode !== ErrorCodes.USER_ALREADY_ONBOARDED) {
               throw error;
             }
@@ -172,13 +204,16 @@ class UserJourneyService {
         }
       }
 
+      // Check for progression if already onboarded
       if (userState) {
         const currentStage = journey.getStage(userState.currentStageId);
 
+        // Skip if already at terminal stage
         if (currentStage.isTerminal) {
           return;
         }
 
+        // Check all possible next stages
         for (const nextStageId of currentStage.nextStages) {
           const nextStage = journey.getStage(nextStageId);
 
@@ -190,6 +225,7 @@ class UserJourneyService {
               stageId: nextStageId,
             });
 
+            // Only move to one next stage per evaluation
             break;
           }
         }
@@ -199,6 +235,7 @@ class UserJourneyService {
     return results;
   }
 
+  // Get all users in a journey
   getUsersInJourney(journeyId) {
     const journey = this.getJourney(journeyId);
     const users = [];
@@ -216,6 +253,7 @@ class UserJourneyService {
     return users;
   }
 
+  // Get all journeys a user is part of
   getUserJourneys(userId) {
     const journeys = [];
 
@@ -234,11 +272,13 @@ class UserJourneyService {
     return journeys;
   }
 
+  // Check and update all time-bound journeys
   checkAndUpdateTimeBasedJourneys() {
     const now = new Date();
 
     this.journeys.forEach((journey) => {
       if (journey.isTimeBound && journey.isActive) {
+        // Deactivate if end date has passed
         if (journey.endDate && now > journey.endDate) {
           journey.isActive = false;
           console.log(
@@ -246,6 +286,7 @@ class UserJourneyService {
           );
         }
 
+        // Activate if start date has arrived
         if (
           journey.startDate &&
           now >= journey.startDate &&

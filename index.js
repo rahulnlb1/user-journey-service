@@ -7,10 +7,13 @@ const {
 const { JourneyAPI } = require("./src/api/journeyAPI");
 const { config } = require("./config/config");
 
+// Create the journey service
 const journeyService = new UserJourneyService();
 
+// Create message queue simulator
 const messageQueue = new MessageQueueSimulator(journeyService);
 
+// Create the API
 const journeyAPI = new JourneyAPI(journeyService);
 
 // Register the journey service as a consumer of events
@@ -34,7 +37,8 @@ const consumerId = messageQueue.registerConsumer((event) => {
   }
 });
 
-// Schedule job to check time-based journeys
+
+// Setup scheduled tasks
 function setupScheduledTasks() {
   console.log("[Scheduler] Setting up scheduled tasks...");
 
@@ -275,4 +279,5 @@ function main() {
   console.log("[Main] API available via global.api object");
 }
 
+// Run the application
 main();
