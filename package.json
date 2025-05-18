@@ -1,0 +1,11 @@
+{
+  "name": "user-journey-service",
+  "version": "1.0.0",
+  "description": "User journey service",
+  "main": "index.js",
+  "scripts": {
+    "script": "node index.js"
+  },
+  "author": "rahulnlb@gmail.com",
+  "license": "ISC"
+}
